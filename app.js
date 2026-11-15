@@ -151,7 +151,9 @@
         const vt = document.startViewTransition(() => {
           updateFn();
         });
-        vt.finished.catch(() => {});
+        vt.finished.catch((err) => {
+          if (err) console.error(err);
+        });
         applyDirectionClass(direction);
         return;
       } catch {
@@ -821,38 +823,6 @@
     });
   }
 
-  function renderCourseMap() {
-    const gradeData = getGradeData();
-    if (!gradeData || !Array.isArray(gradeData.sections)) {
-      appMain.innerHTML = `
-        <div class="empty-state">
-          <h2>Матеріали ${state.grade} класу ще завантажуються</h2>
-          <p>Перевірте підключення файлів <code>data-grade8.js</code> та <code>data-grade9.js</code>.</p>
-        </div>
-      `;
-      return;
-    }
-
-    const mastery = computeGradeMastery(gradeData);
-    const xp = calculateXp();
-    const rank = getStudentRank(xp);
-    const ringOffset = RING_CIRCUMFERENCE * (1 - mastery.masteryPct / 100);
-    const chartBars = buildTopicChartData(gradeData);
-
-    const continueBtnHtml = mastery.nextParagraphItem
-      ? `
-        <button type="button"
-          class="hero-continue-btn"
-          data-action="open-paragraph"
-          data-section-id="${escapeHtml(mastery.nextParagraphItem.section.id)}"
-          data-item-id="${escapeHtml(mastery.nextParagraphItem.paragraph.id)}">
-          Продовжити навчання: ${escapeHtml(formatUnitBadge(mastery.nextParagraphItem.paragraph.number, gradeData))}. ${escapeHtml(
-          mastery.nextParagraphItem.paragraph.title
-        )} →
-        </button>
-      `
-      : '';
-
   function matchesCourseFilter(entry, topic, query, onlyUnlearned) {
     if (onlyUnlearned && entry.kind !== 'practical') {
       const isDone = !!state.progress.completedParagraphs[pKey(state.grade, entry.data.id)];
@@ -1032,6 +1002,42 @@
     if (!grid || !gradeData) return;
     grid.innerHTML = buildCourseSectionsHtml(gradeData);
   }
+
+  function renderCourseMap() {
+    const gradeData = getGradeData();
+    if (!gradeData || !Array.isArray(gradeData.sections)) {
+      appMain.innerHTML = `
+        <div class="empty-state">
+          <h2>Матеріали ${state.grade} класу ще завантажуються</h2>
+          <p>Перевірте підключення файлів <code>data-grade8.js</code> та <code>data-grade9.js</code>.</p>
+        </div>
+      `;
+      return;
+    }
+
+    const mastery = computeGradeMastery(gradeData);
+    const xp = calculateXp();
+    const rank = getStudentRank(xp);
+    const ringOffset = RING_CIRCUMFERENCE * (1 - mastery.masteryPct / 100);
+    const chartBars = buildTopicChartData(gradeData);
+
+    const continueBtnHtml = mastery.nextParagraphItem
+      ? `
+        <button type="button"
+          class="hero-continue-btn"
+          data-action="open-paragraph"
+          data-section-id="${escapeHtml(mastery.nextParagraphItem.section.id)}"
+          data-item-id="${escapeHtml(mastery.nextParagraphItem.paragraph.id)}">
+          Продовжити навчання: ${escapeHtml(formatUnitBadge(mastery.nextParagraphItem.paragraph.number, gradeData))}. ${escapeHtml(
+          mastery.nextParagraphItem.paragraph.title
+        )} →
+        </button>
+      `
+      : '';
+
+  const sectionsHtml = buildCourseSectionsHtml(gradeData);
+  const allTopicIds = gradeData.sections.flatMap((s) => (s.topics || []).map((t) => t.id));
+  const hasExpanded = allTopicIds.some((id) => !state.collapsedTopics[id]);
 
     appMain.innerHTML = `
       <section class="course-map-view">
