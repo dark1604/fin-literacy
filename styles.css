@@ -2936,6 +2936,55 @@ body,
   user-select: none;
 }
 
+.page-permalink-btn {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 11px;
+  border-radius: var(--radius-pill);
+  background-color: var(--bg-paper, #fff);
+  border: 1.5px solid var(--border-crisp);
+  color: var(--text-main);
+  font-family: var(--font-display);
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease, transform 0.12s ease;
+}
+
+.page-permalink-btn:hover {
+  background-color: var(--section-tint);
+  border-color: var(--section-primary);
+  color: var(--section-dark);
+  transform: translateY(-1px);
+}
+
+.page-permalink-btn.is-copied {
+  background-color: #e8f8ec;
+  border-color: #2e9e4f;
+  color: #1c6b33;
+}
+
+.hero-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.hero-actions-row .hero-continue-btn {
+  margin-top: 0;
+}
+
+.page-permalink-hero {
+  margin-left: 0;
+  padding: 9px 15px;
+  font-size: 0.84rem;
+}
+
 /* ==========================================================================
    10. Початковий екран вибору класу (Welcome Grade Gate)
    ========================================================================== */

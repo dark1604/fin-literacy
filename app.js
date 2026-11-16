@@ -20,6 +20,9 @@
     { minXp: 0, level: 1, title: 'Новачок' }
   ];
 
+  const BASE_TITLE = document.title;
+  let useHashFallback = false;
+
   const state = {
     grade: 8,
     sectionId: null,
@@ -239,6 +242,205 @@
     } catch {
       // Ignore storage quota / privacy-mode errors
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Deep Linking & Permalink Helpers
+  // ---------------------------------------------------------------------------
+
+  function buildPageParams(grade = state.grade, view = state.view, itemId = state.activeItemId) {
+    const params = new URLSearchParams();
+    if (view && view !== 'welcome') {
+      params.set('grade', String(grade));
+      params.set('view', view);
+      if ((view === 'paragraph' || view === 'practical' || view === 'final') && itemId) {
+        params.set('id', String(itemId));
+      }
+    }
+    return params;
+  }
+
+  function getPageHref(grade = state.grade, view = state.view, itemId = state.activeItemId) {
+    const params = buildPageParams(grade, view, itemId);
+    const qs = params.toString();
+    if (!qs) {
+      return window.location.pathname.split('/').pop() || 'index.html';
+    }
+    return useHashFallback ? `#${qs}` : `?${qs}`;
+  }
+
+  function getAbsolutePageUrl(grade = state.grade, view = state.view, itemId = state.activeItemId) {
+    const params = buildPageParams(grade, view, itemId);
+    const qs = params.toString();
+    const base = window.location.href.split('#')[0].split('?')[0];
+    if (!qs) return base;
+    return useHashFallback ? `${base}#${qs}` : `${base}?${qs}`;
+  }
+
+  function syncUrlFromState(replace = false) {
+    const params = buildPageParams();
+    const qs = params.toString();
+    const targetRelative = qs ? `?${qs}` : window.location.pathname;
+
+    if (!useHashFallback && window.history && typeof window.history.pushState === 'function') {
+      try {
+        const currentQs = window.location.search.replace(/^\?/, '');
+        if (currentQs === qs && !window.location.hash) return;
+        if (replace) {
+          window.history.replaceState(null, '', targetRelative);
+        } else {
+          window.history.pushState(null, '', targetRelative);
+        }
+        return;
+      } catch {
+        useHashFallback = true;
+      }
+    }
+
+    const targetHash = qs ? `#${qs}` : '';
+    if (window.location.hash !== targetHash) {
+      if (replace) {
+        window.history.replaceState(null, '', targetHash || window.location.pathname);
+      } else {
+        window.location.hash = targetHash;
+      }
+    }
+  }
+
+  function parseUrlParams() {
+    const searchParams = new URLSearchParams(window.location.search);
+    const rawHash = window.location.hash ? window.location.hash.replace(/^#/, '') : '';
+    const hashParams = rawHash.includes('=') ? new URLSearchParams(rawHash) : null;
+    return {
+      grade: (hashParams && hashParams.get('grade')) || searchParams.get('grade'),
+      view: (hashParams && hashParams.get('view')) || searchParams.get('view'),
+      id: (hashParams && hashParams.get('id')) || searchParams.get('id')
+    };
+  }
+
+  function resolveItemInGrade(grade, view, id) {
+    const gradeData = getGradeData(grade);
+    if (!gradeData) return null;
+    if (view === 'paragraph') return findParagraphContext(gradeData, id);
+    if (view === 'practical') return findPracticalContext(gradeData, id);
+    if (view === 'final') return findFinalContext(gradeData, id);
+    return null;
+  }
+
+  function applyUrlToState() {
+    const { grade: qGrade, view: qView, id: qId } = parseUrlParams();
+    let targetGrade = qGrade === '8' || qGrade === '9' ? Number(qGrade) : null;
+
+    if (!targetGrade && qView && qView !== 'welcome' && qId) {
+      if (resolveItemInGrade(8, qView, qId)) {
+        targetGrade = 8;
+      } else if (resolveItemInGrade(9, qView, qId)) {
+        targetGrade = 9;
+      }
+    }
+
+    if (!targetGrade && !qView) {
+      state.view = 'welcome';
+      state.activeItemId = null;
+      const defaultData = getGradeData(state.grade);
+      if (defaultData && defaultData.sections && defaultData.sections[0]) {
+        state.sectionId = defaultData.sections[0].id;
+      }
+      return;
+    }
+
+    state.grade = targetGrade || 8;
+    const gradeData = getGradeData(state.grade);
+    const firstSectionId =
+      gradeData && gradeData.sections && gradeData.sections[0]
+        ? gradeData.sections[0].id
+        : '1';
+
+    if (qView === 'paragraph' || qView === 'practical' || qView === 'final') {
+      const ctx = resolveItemInGrade(state.grade, qView, qId);
+      if (ctx) {
+        state.view = qView;
+        state.sectionId = ctx.section.id;
+        state.activeItemId =
+          qView === 'paragraph'
+            ? ctx.paragraph.id
+            : qView === 'practical'
+            ? ctx.work.id
+            : ctx.finalWork.id;
+        return;
+      }
+    }
+
+    state.view = qView === 'welcome' ? 'welcome' : 'map';
+    state.sectionId = firstSectionId;
+    state.activeItemId = null;
+  }
+
+  function syncDocumentTitle() {
+    const authorLabel = AUTHOR === 'kuzniecova' ? 'А. Кузнєцова' : 'О. Пластун';
+    if (state.view === 'welcome') {
+      document.title = BASE_TITLE;
+      return;
+    }
+    const gradeData = getGradeData();
+    if (state.view === 'paragraph') {
+      const ctx = findParagraphContext(gradeData, state.activeItemId);
+      if (ctx) {
+        const unitText = formatUnitBadge(ctx.paragraph.number, gradeData);
+        document.title = `${unitText}. ${ctx.paragraph.title} (${state.grade} кл) — ${authorLabel}`;
+        return;
+      }
+    } else if (state.view === 'practical') {
+      const ctx = findPracticalContext(gradeData, state.activeItemId);
+      if (ctx) {
+        document.title = `Практична робота № ${ctx.work.number}. ${ctx.work.title} (${state.grade} кл) — ${authorLabel}`;
+        return;
+      }
+    } else if (state.view === 'final') {
+      const ctx = findFinalContext(gradeData, state.activeItemId);
+      if (ctx) {
+        document.title = `${ctx.finalWork.title || 'Підсумкова робота'} (${state.grade} кл) — ${authorLabel}`;
+        return;
+      }
+    }
+    document.title = `Карта курсу (${state.grade} кл) — ${authorLabel}`;
+  }
+
+  function renderPermalinkHtml(extraClass = '') {
+    const href = getPageHref();
+    return `
+      <a href="${escapeHtml(href)}"
+         class="page-permalink-btn ${extraClass}"
+         data-action="copy-page-link"
+         title="Скопіювати посилання на цю сторінку (для конспекту)">
+        <span class="permalink-icon" aria-hidden="true">🔗</span>
+        <span class="permalink-label">Посилання</span>
+      </a>
+    `;
+  }
+
+  function fallbackCopyText(text) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      document.execCommand('copy');
+    } catch {
+      // Ignore copy failure
+    }
+    ta.remove();
+  }
+
+  function copyTextToClipboard(text) {
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      return navigator.clipboard.writeText(text).catch(() => fallbackCopyText(text));
+    }
+    fallbackCopyText(text);
+    return Promise.resolve();
   }
 
   function getGradeData(grade = state.grade) {
@@ -1050,7 +1252,10 @@
             }</span>
             <h1 class="course-title">${escapeHtml(gradeData.title || `${state.grade} клас`)}</h1>
             <p class="course-subtitle">${escapeHtml(gradeData.subtitle || '')}</p>
-            ${continueBtnHtml}
+            <div class="hero-actions-row">
+              ${continueBtnHtml}
+              ${renderPermalinkHtml('page-permalink-hero')}
+            </div>
           </div>
 
           <div class="hero-wow-right">
@@ -1260,6 +1465,7 @@
         <span class="breadcrumb-step">Тема ${escapeHtml(topic.number)}</span>
         <span class="breadcrumb-sep" aria-hidden="true">→</span>
         <span class="breadcrumb-step is-current">${escapeHtml(unitText)}</span>
+        ${renderPermalinkHtml()}
       </nav>
     `;
 
@@ -1666,6 +1872,7 @@
         <button type="button" class="breadcrumb-step" data-action="open-map">Розділ ${escapeHtml(section.roman)}</button>
         <span class="breadcrumb-sep" aria-hidden="true">→</span>
         <span class="breadcrumb-step is-current">Практична робота № ${escapeHtml(pw.number)}</span>
+        ${renderPermalinkHtml()}
       </nav>
     `;
 
@@ -1855,6 +2062,7 @@
         <button type="button" class="breadcrumb-step" data-action="open-map">Розділ ${escapeHtml(section.roman)}</button>
         <span class="breadcrumb-sep" aria-hidden="true">→</span>
         <span class="breadcrumb-step is-current">Підсумкова робота</span>
+        ${renderPermalinkHtml()}
       </nav>
     `;
 
@@ -2009,6 +2217,7 @@
     if (scrollTop) {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
+    syncDocumentTitle();
     updateReadingProgress();
   }
 
@@ -2058,6 +2267,7 @@
 
       closeMobileSidebar();
       renderApp(true);
+      syncUrlFromState(false);
     });
 
     playClick();
@@ -2079,6 +2289,7 @@
       state.activeItemId = null;
       closeMobileSidebar();
       renderApp(true);
+      syncUrlFromState(false);
     });
 
     playClick();
@@ -2088,8 +2299,10 @@
     if (state.view === 'welcome') return;
     transitionView('back', () => {
       state.view = 'welcome';
+      state.activeItemId = null;
       closeMobileSidebar();
       renderApp(true);
+      syncUrlFromState(false);
     });
     playClick();
   }
@@ -2458,6 +2671,21 @@
           playClick();
         }
         renderApp(false);
+      } else if (action === 'copy-page-link') {
+        if (event.ctrlKey || event.metaKey || event.shiftKey) return;
+        event.preventDefault();
+        const url = getAbsolutePageUrl();
+        copyTextToClipboard(url).then(() => {
+          const labelEl = actionEl.querySelector('.permalink-label');
+          actionEl.classList.add('is-copied');
+          if (labelEl) labelEl.textContent = 'Скопійовано ✓';
+          clearTimeout(actionEl._copyTimer);
+          actionEl._copyTimer = setTimeout(() => {
+            actionEl.classList.remove('is-copied');
+            if (labelEl) labelEl.textContent = 'Посилання';
+          }, 1800);
+        });
+        playClick();
       } else if (action === 'toggle-topic') {
         const topicId = actionEl.dataset.topicId;
         state.collapsedTopics[topicId] = !state.collapsedTopics[topicId];
@@ -2526,16 +2754,17 @@
   window.addEventListener('scroll', updateReadingProgress, { passive: true });
   window.addEventListener('resize', updateReadingProgress, { passive: true });
 
+  function handleHistoryNavigation() {
+    applyUrlToState();
+    closeMobileSidebar();
+    renderApp(true);
+  }
+
+  window.addEventListener('popstate', handleHistoryNavigation);
+  window.addEventListener('hashchange', handleHistoryNavigation);
+
   // Initial Boot
-  const urlParams = new URLSearchParams(window.location.search);
-  const qGrade = urlParams.get('grade');
-  if (qGrade === '8' || qGrade === '9') {
-    state.grade = Number(qGrade);
-    state.view = 'map';
-  }
-  const initialGradeData = getGradeData(state.grade);
-  if (initialGradeData && initialGradeData.sections && initialGradeData.sections[0]) {
-    state.sectionId = initialGradeData.sections[0].id;
-  }
+  applyUrlToState();
+  syncUrlFromState(true);
   renderApp(false);
 })();
